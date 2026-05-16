@@ -1,4 +1,4 @@
-name: Deploy Formbricks Container to Azure
+name: Build & Deploy to Azure App Service
 
 on:
   push:
@@ -6,15 +6,67 @@ on:
   workflow_dispatch:
 
 jobs:
-  deploy-container:
-    name: Deploy Official Image to Azure
+  build-and-deploy:
+    name: Build and Deploy Application
     runs-on: ubuntu-latest
 
     steps:
-      - name: Deploy to Azure Web App for Containers
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build Next.js application
+        run: npm run build
+        env:
+          NODE_ENV: production
+          MONGODB_URL: ${{ secrets.MONGODB_URL }}
+
+      - name: Create deployment package
+        run: |
+          mkdir -p deployment-package
+
+          # Copy Next.js build output
+          cp -r .next deployment-package/
+
+          # Copy public folder if exists
+          cp -r public deployment-package/ 2>/dev/null || true
+
+          # Copy config files
+          cp package-lock.json deployment-package/
+          cp next.config.js deployment-package/ 2>/dev/null || true
+          cp next.config.ts deployment-package/ 2>/dev/null || true
+          cp next.config.mjs deployment-package/ 2>/dev/null || true
+
+          # Create a clean package.json with only production fields
+          node -e "
+            const pkg = require('./package.json');
+            const prod = {
+              name: pkg.name,
+              version: pkg.version,
+              scripts: { start: pkg.scripts.start },
+              dependencies: pkg.dependencies,
+              engines: { node: '20.x' }
+            };
+            require('fs').writeFileSync('deployment-package/package.json', JSON.stringify(prod, null, 2));
+          "
+
+      - name: Install production dependencies
+        working-directory: deployment-package
+        run: npm ci --omit=dev
+
+      - name: Deploy to Azure Web App
         uses: azure/webapps-deploy@v3
         with:
           app-name: ${{ vars.WEBAPP_NAME }}
+          slot-name: 'Production'
+          package: deployment-package
           publish-profile: ${{ secrets.AZURE_WEBAPP_PUBLISH_PROFILE }}
-          # Langsung menggunakan image Docker resmi dari Formbricks
-          images: 'ghcr.io/formbricks/formbricks:latest'
