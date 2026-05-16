@@ -22,8 +22,8 @@ jobs:
       uses: actions/setup-node@v4
       with:
         node-version: ${{ vars.NODE_VERSION }}
-        cache: npm
-        cache-dependency-path: package-lock.json
+        cache: yarn
+        cache-dependency-path: yarn.lock
 
 
     - name: Install dependencies
